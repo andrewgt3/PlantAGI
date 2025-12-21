@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Data files
+*.csv
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+sensor_data*.csv
+context_logs.csv
+rul_training_data.csv
+insight_report.json
+
+# Models
+*.pkl
+*.joblib
+rul_model.json
+rul_model_metadata.json
+*.h5
+
+# Database
+*.db
+*.sqlite
+
+# Node
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+/frontend/build
+/frontend/dist
+/frontend/.vite
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Docker
+*.pid
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# OS
+Thumbs.db
