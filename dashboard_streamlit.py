@@ -3,12 +3,12 @@ import pandas as pd
 from sqlalchemy import create_engine, text
 import altair as alt
 import time
-from fpdf import FPDF
-from datetime import datetime
-from streamlit_extras.metric_cards import style_metric_cards # <--- THE DESIGN UPGRADE
 import subprocess
 import sys
 import socket
+from fpdf import FPDF
+from datetime import datetime
+from streamlit_extras.metric_cards import style_metric_cards 
 
 # --- CONFIGURATION ---
 DB_CONNECTION = "postgresql://postgres:password@localhost:5432/pdm_timeseries"
@@ -18,13 +18,14 @@ REFRESH_RATE_SEC = 1
 # --- SETUP PAGE ---
 st.set_page_config(page_title=ST_PAGE_TITLE, layout="wide", page_icon="🏭")
 
-# --- CUSTOM CSS (The "Polish") ---
-# This removes the gap at the top and sharpens the borders
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
     .block-container {padding-top: 1rem; padding-bottom: 2rem;}
-    /* Make charts fit the dark theme perfectly */
     canvas {border-radius: 4px;} 
+    div[data-testid="stMetricValue"] {
+        font-size: 1.4rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
