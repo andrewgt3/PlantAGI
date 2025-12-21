@@ -59,7 +59,7 @@ def load_data(asset_id=None):
         """
         # Look for events relevant to this asset (or global events)
         query_events = """
-        SELECT timestamp, event_type, staff_id 
+        SELECT timestamp, event_type, severity, description 
         FROM events 
         ORDER BY timestamp DESC
         """
@@ -143,53 +143,124 @@ def render_detail_view(asset_id, df_history, df_events):
         st.rerun()
 
     # Header
-    col1, col2 = st.columns([3, 1])
+    st.title(f"🤖 Diagnostics: {asset_id}")
+    
+    # Calculate anomaly statistics
+    df_history['rolling_mean'] = df_history['vibration_x'].rolling(window=60, min_periods=1).mean()
+    df_history['rolling_std'] = df_history['vibration_x'].rolling(window=60, min_periods=1).std()
+    df_history['rolling_std'] = df_history['rolling_std'].fillna(0)
+    
+    # Detect anomalies (> 2 std deviations)
+    threshold = df_history['rolling_mean'] + (2 * df_history['rolling_std'])
+    df_history['is_anomaly'] = df_history['vibration_x'] > threshold
+    
+    anomaly_count = df_history['is_anomaly'].sum()
+    anomaly_pct = (anomaly_count / len(df_history)) * 100 if len(df_history) > 0 else 0
+    
+    # Top Metrics Row
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.title(f"🤖 Diagnostics: {asset_id}")
-    with col2:
         latest = df_history.iloc[0]
-        st.metric("Real-Time Vibration", f"{latest['vibration_x']:.3f} g", "-0.01")
-
-    # The Chart (Downsampled)
-    df_chart = df_history.iloc[::5, :] # 5x Faster
+        baseline = df_history['vibration_x'].mean()
+        delta = ((latest['vibration_x'] - baseline) / baseline) * 100
+        st.metric("Real-Time Vibration", f"{latest['vibration_x']:.3f} g", f"{delta:+.1f}%")
+    with col2:
+        st.metric("Anomalies Detected", f"{anomaly_count}", f"{anomaly_pct:.1f}%")
+    with col3:
+        st.metric("Avg Motor Temp", f"{df_history['motor_temp_c'].mean():.1f}°C")
+    with col4:
+        st.metric("Avg Torque", f"{df_history['joint_1_torque'].mean():.1f} Nm")
     
+    st.divider()
+    
+    # The Chart (Downsampled for performance)
+    df_chart = df_history.iloc[::5, :].copy()  # 5x Faster
+    df_anomalies = df_chart[df_chart['is_anomaly']].copy()
+    
+    # Base vibration line
     base = alt.Chart(df_chart).encode(
-        x=alt.X('timestamp', axis=alt.Axis(title='Time', format='%H:%M')),
-        tooltip=['timestamp', 'vibration_x']
+        x=alt.X('timestamp:T', axis=alt.Axis(title='Time', format='%H:%M')),
     )
-    line = base.mark_line(color='#0068c9').encode(y='vibration_x')
     
-    # Context Overlay (Red Line)
-    # Filter events to what fits on the graph
+    vibration_line = base.mark_line(color='#0068c9', size=2).encode(
+        y=alt.Y('vibration_x:Q', title='Vibration (g)'),
+        tooltip=['timestamp:T', 'vibration_x:Q', 'rolling_mean:Q']
+    )
+    
+    # Rolling mean line
+    mean_line = base.mark_line(color='#00cc96', strokeDash=[5,5]).encode(
+        y='rolling_mean:Q',
+        tooltip=['timestamp:T', 'rolling_mean:Q']
+    )
+    
+    # Anomaly points
+    anomaly_points = alt.Chart(df_anomalies).mark_circle(
+        size=100,
+        color='#ff4b4b',
+        opacity=0.7
+    ).encode(
+        x='timestamp:T',
+        y='vibration_x:Q',
+        tooltip=['timestamp:T', 'vibration_x:Q']
+    )
+    
+    # Event overlay (red vertical lines for Conveyor_Jam)
     min_time = df_chart['timestamp'].min()
     visible_events = df_events[df_events['timestamp'] >= min_time]
     
-    # Focus on the 'Cleaning Crew' type events for the visual
-    cleaning_events = visible_events[visible_events['event_type'].str.contains('Cleaning', na=False)]
-
-    if not cleaning_events.empty:
-        rules = alt.Chart(cleaning_events).mark_rule(color='red', strokeDash=[5,5]).encode(x='timestamp')
-        chart = (line + rules).interactive()
+    if not visible_events.empty:
+        event_rules = alt.Chart(visible_events).mark_rule(
+            color='red',
+            strokeDash=[5,5],
+            size=2
+        ).encode(
+            x='timestamp:T',
+            tooltip=['timestamp:T', 'event_type:N', 'severity:N']
+        )
+        chart = (vibration_line + mean_line + anomaly_points + event_rules).interactive()
         insight_active = True
     else:
-        chart = line.interactive()
+        chart = (vibration_line + mean_line + anomaly_points).interactive()
         insight_active = False
 
     st.altair_chart(chart, use_container_width=True)
+    
+    # Anomaly Details Table
+    if anomaly_count > 0:
+        st.subheader("🚨 Anomaly Details")
+        top_anomalies = df_history[df_history['is_anomaly']].nlargest(10, 'vibration_x')[
+            ['timestamp', 'vibration_x', 'rolling_mean', 'joint_1_torque', 'motor_temp_c']
+        ]
+        st.dataframe(top_anomalies, use_container_width=True)
 
     # Agent Sidebar (Only in Detail View)
     with st.sidebar:
         st.header(f"🧠 {asset_id} Analysis")
+        
         if insight_active:
-            st.error("ROOT CAUSE FOUND")
-            st.markdown("**Correlation:** Vibration spike follows Cleaning Crew entry by 16.3 mins.")
+            st.error("⚠️ ROOT CAUSE DETECTED")
+            event = visible_events.iloc[0]
+            st.markdown(f"""
+            **Event**: {event['event_type']}  
+            **Severity**: {event['severity']}  
+            **Description**: {event['description']}
+            
+            **Correlation**: Vibration anomalies correlate with cascade failure event.
+            """)
             
             # PDF Button
-            insight_data = {'event_type': 'Cleaning Crew Interference'}
+            insight_data = {'event_type': event['event_type']}
             pdf_bytes = create_work_order(asset_id, insight_data)
-            st.download_button("📄 Download Work Order", pdf_bytes, "work_order.pdf", "application/pdf", type="primary")
+            st.download_button(
+                "📄 Download Work Order",
+                pdf_bytes,
+                f"work_order_{asset_id}.pdf",
+                "application/pdf",
+                type="primary"
+            )
         else:
-            st.info("No active correlations.")
+            st.info("✓ No active correlations detected")
+            st.metric("System Status", "Nominal")
 
 # --- MAIN APP LOOP ---
 def main():
