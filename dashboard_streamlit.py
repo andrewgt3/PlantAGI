@@ -6,6 +6,8 @@ import time
 from fpdf import FPDF
 from datetime import datetime
 from streamlit_extras.metric_cards import style_metric_cards # <--- THE DESIGN UPGRADE
+import subprocess
+import sys
 
 # --- CONFIGURATION ---
 DB_CONNECTION = "postgresql://postgres:password@localhost:5432/pdm_timeseries"
@@ -93,19 +95,38 @@ def render_fleet_view(df_fleet):
     st.caption("Live Telemetry | Zone A | 4 Active Assets")
     
     # Logic for System Status
-    critical_assets = df_fleet[df_fleet['rul_hours'] < 48]
-    if len(critical_assets) >= 2:
-        st.error(f"🚨 SYSTEMIC FAILURE DETECTED: {len(critical_assets)} Assets Critical. Risk of Cascade.")
-    else:
-        st.success("✅  All Systems Nominal")
+    if not df_fleet.empty:
+        critical_assets = df_fleet[df_fleet['rul_hours'] < 48]
+        if len(critical_assets) >= 2:
+            st.error(f"🚨 SYSTEMIC FAILURE DETECTED: {len(critical_assets)} Assets Critical. Risk of Cascade.")
+        else:
+            st.success("✅  All Systems Nominal")
     
     st.divider()
 
+    # --- THE "START BUTTON" LOGIC ---
     if df_fleet.empty:
-        st.warning("No Data Stream. Start OPC Client.")
+        st.warning("⚠️ No Data Stream Detected.")
+        st.info("The Dashboard is running, but it cannot see the Fleet.")
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if st.button("🔌 Connect to Virtual Fleet", type="primary"):
+                try:
+                    # This launches the script in a separate background process
+                    # Using mock_fleet_streamer.py as the robust simulation source
+                    subprocess.Popen([sys.executable, "mock_fleet_streamer.py"])
+                    st.toast("Starting Virtual Fleet Simulator...", icon="🚀")
+                    time.sleep(3) # Give it a moment to connect
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to launch script: {e}")
+        
+        with col2:
+            st.caption("Auto-lauches 'mock_fleet_streamer.py' background process.")
         return
 
-    # THE GRID
+    # THE GRID (Data is present)
     cols = st.columns(4)
     for i, row in df_fleet.iterrows():
         asset = row['asset_id']
