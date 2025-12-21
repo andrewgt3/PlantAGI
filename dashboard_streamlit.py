@@ -8,6 +8,7 @@ from datetime import datetime
 from streamlit_extras.metric_cards import style_metric_cards # <--- THE DESIGN UPGRADE
 import subprocess
 import sys
+import socket
 
 # --- CONFIGURATION ---
 DB_CONNECTION = "postgresql://postgres:password@localhost:5432/pdm_timeseries"
